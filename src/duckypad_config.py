@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import ctypes
 from shared import *
 import copy
 import shutil
@@ -22,6 +23,17 @@ from tkinter import font
 import dsvm_preprocessor
 import ds_stdlib
 import darkdetect
+
+HIDE_DEBUG_CONSOLE = "--no-debug-console" in sys.argv
+if HIDE_DEBUG_CONSOLE:
+    sys.argv = [arg for arg in sys.argv if arg != "--no-debug-console"]
+    if sys.platform == "win32":
+        try:
+            console_window = ctypes.windll.kernel32.GetConsoleWindow()
+            if console_window:
+                ctypes.windll.user32.ShowWindow(console_window, 0)
+        except Exception:
+            pass
 
 """
 0.13.5
@@ -235,9 +247,10 @@ ensure_dir(app_save_path)
 ensure_dir(backup_path)
 ensure_dir(hid_dump_path)
 
-print("\n\n--------------------------")
-print("\n\nWelcome to duckyPad Configurator!\n")
-print("This window prints debug information.")
+if HIDE_DEBUG_CONSOLE is False:
+    print("\n\n--------------------------")
+    print("\n\nWelcome to duckyPad Configurator!\n")
+    print("This window prints debug information.")
 
 default_button_color = 'SystemButtonFace'
 if 'linux' in sys.platform:
@@ -249,6 +262,58 @@ PADDING = scaled_size(10)
 HEIGHT_ROOT_FOLDER_LF = scaled_size(50)
 INVALID_ROOT_FOLDER_STRING = "<---- Press to connect"
 last_rgb = (238,130,238)
+FAVORITE_COLOR_SLOT_COUNT = 8
+favorite_colors_file_path = os.path.join(app_save_path, "favorite_colors.txt")
+
+def normalize_rgb_tuple(rgb_tuple):
+    if rgb_tuple is None:
+        return None
+    try:
+        color = tuple(int(value) for value in rgb_tuple[:3])
+    except Exception:
+        return None
+    if len(color) != 3 or any(value < 0 or value > 255 for value in color):
+        return None
+    return color
+
+def load_favorite_colors():
+    result = [None] * FAVORITE_COLOR_SLOT_COUNT
+    try:
+        with open(favorite_colors_file_path, 'r', encoding='utf8') as favorite_color_file:
+            for index, line in enumerate(favorite_color_file):
+                if index >= FAVORITE_COLOR_SLOT_COUNT:
+                    break
+                split_line = line.strip().split()
+                if len(split_line) != 3:
+                    continue
+                result[index] = normalize_rgb_tuple(tuple(split_line))
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        print("load_favorite_colors:", e)
+    return result
+
+def save_favorite_colors():
+    try:
+        with open(favorite_colors_file_path, 'w', encoding='utf8', newline='') as favorite_color_file:
+            for color in favorite_colors:
+                if color is None:
+                    favorite_color_file.write('\n')
+                else:
+                    favorite_color_file.write(f"{color[0]} {color[1]} {color[2]}\n")
+    except Exception as e:
+        print("save_favorite_colors:", e)
+
+def get_initial_favorite_slot(current_color):
+    current_color = normalize_rgb_tuple(current_color)
+    if current_color in favorite_colors:
+        return favorite_colors.index(current_color)
+    for index, favorite_color in enumerate(favorite_colors):
+        if favorite_color is None:
+            return index
+    return 0
+
+favorite_colors = load_favorite_colors()
 
 ds_stdlib.ensure_dpds_stdlib(ext_lib_path)
 ds_stdlib.fetch_update(ext_lib_path)
@@ -649,6 +714,129 @@ def adapt_color(rgb_tuple):
         return "black"
     return 'white'
 
+def askcolor_with_favorites(initial_color, title):
+    current_color = normalize_rgb_tuple(initial_color)
+    if current_color is None:
+        current_color = normalize_rgb_tuple(last_rgb)
+    if current_color is None:
+        current_color = (255, 255, 255)
+
+    dialog_result = {'color': None}
+    state = {
+        'current_color': current_color,
+        'selected_slot': get_initial_favorite_slot(current_color)
+    }
+
+    dialog = Toplevel(root)
+    dialog.title(title)
+    dialog.resizable(False, False)
+    dialog.transient(root)
+
+    current_color_label = Label(dialog, text="Current color:")
+    current_color_label.grid(row=0, column=0, padx=10, pady=(10, 5), sticky='w')
+    preview_button = Label(dialog, borderwidth=1, relief="solid")
+    preview_button.grid(row=0, column=1, padx=5, pady=(10, 5), sticky='w')
+    current_color_value_label = Label(dialog)
+    current_color_value_label.grid(row=0, column=2, padx=5, pady=(10, 5), sticky='w')
+
+    favorite_colors_label = Label(dialog, text="Favorite slots:")
+    favorite_colors_label.grid(row=1, column=0, padx=10, pady=(5, 5), sticky='nw')
+
+    favorite_slot_frame = Frame(dialog)
+    favorite_slot_frame.grid(row=1, column=1, columnspan=2, padx=5, pady=(5, 5), sticky='w')
+
+    def choose_custom_color():
+        result = askcolor(color=state['current_color'], title=title)[0]
+        if result is None:
+            return
+        state['current_color'] = normalize_rgb_tuple(result)
+        refresh_favorite_color_dialog()
+
+    def select_favorite_slot(slot_index):
+        state['selected_slot'] = slot_index
+        refresh_favorite_color_dialog()
+
+    def use_favorite_slot():
+        favorite_color = favorite_colors[state['selected_slot']]
+        if favorite_color is None:
+            return
+        state['current_color'] = favorite_color
+        refresh_favorite_color_dialog()
+
+    def save_current_color_to_selected_slot():
+        favorite_colors[state['selected_slot']] = state['current_color']
+        save_favorite_colors()
+        refresh_favorite_color_dialog()
+
+    favorite_slot_button_list = []
+    for slot_index in range(FAVORITE_COLOR_SLOT_COUNT):
+        this_button = Button(
+            favorite_slot_frame,
+            text=str(slot_index + 1),
+            width=4,
+            command=lambda value=slot_index: select_favorite_slot(value)
+        )
+        this_button.grid(row=slot_index // 4, column=slot_index % 4, padx=3, pady=3)
+        favorite_slot_button_list.append(this_button)
+
+    def refresh_favorite_color_dialog():
+        preview_button.config(
+            background=rgb_to_hex(state['current_color']),
+            width=8,
+            height=1
+        )
+        current_color_value_label.config(
+            text=f"{state['current_color'][0]}, {state['current_color'][1]}, {state['current_color'][2]}"
+        )
+        for slot_index, slot_button in enumerate(favorite_slot_button_list):
+            favorite_color = favorite_colors[slot_index]
+            button_kwargs = {
+                'text': str(slot_index + 1),
+                'relief': 'sunken' if slot_index == state['selected_slot'] else 'raised',
+                'borderwidth': 3 if slot_index == state['selected_slot'] else 1
+            }
+            if favorite_color is None:
+                button_kwargs['background'] = default_button_color
+                button_kwargs['foreground'] = text_color_both_light_and_dark_mode
+            else:
+                button_kwargs['background'] = rgb_to_hex(favorite_color)
+                button_kwargs['foreground'] = adapt_color(favorite_color)
+            slot_button.config(**button_kwargs)
+        if favorite_colors[state['selected_slot']] is None:
+            use_slot_button.config(state=DISABLED)
+        else:
+            use_slot_button.config(state=NORMAL)
+
+    button_frame = Frame(dialog)
+    button_frame.grid(row=2, column=0, columnspan=3, padx=10, pady=(5, 10))
+
+    choose_color_button = Button(button_frame, text="Choose...", command=choose_custom_color)
+    choose_color_button.grid(row=0, column=0, padx=4)
+    use_slot_button = Button(button_frame, text="Use Slot", command=use_favorite_slot)
+    use_slot_button.grid(row=0, column=1, padx=4)
+    save_to_slot_button = Button(button_frame, text="Save to Slot", command=save_current_color_to_selected_slot)
+    save_to_slot_button.grid(row=0, column=2, padx=4)
+
+    def close_with_color():
+        dialog_result['color'] = state['current_color']
+        dialog.destroy()
+
+    action_frame = Frame(dialog)
+    action_frame.grid(row=3, column=0, columnspan=3, padx=10, pady=(0, 10))
+
+    ok_button = Button(action_frame, text="OK", width=10, command=close_with_color)
+    ok_button.grid(row=0, column=0, padx=4)
+    cancel_button = Button(action_frame, text="Cancel", width=10, command=dialog.destroy)
+    cancel_button.grid(row=0, column=1, padx=4)
+
+    dialog.bind("<Return>", lambda event: close_with_color())
+    dialog.bind("<Escape>", lambda event: dialog.destroy())
+    refresh_favorite_color_dialog()
+    dialog.grab_set()
+    choose_color_button.focus_set()
+    root.wait_window(dialog)
+    return dialog_result['color']
+
 def update_profile_display():
     global selected_key
     profile_var.set([' '+x.name for x in profile_list]) # update profile listbox
@@ -695,6 +883,7 @@ def update_profile_display():
     custom_key_color_checkbox.config(state=DISABLED)
     allow_abort_checkbox.config(state=DISABLED)
     dont_repeat_checkbox.config(state=DISABLED)
+    timed_key_press_button.config(state=DISABLED)
     script_textbox.delete(1.0, 'end')
     check_syntax_label.config(text="", fg=color_green_both_light_and_dark_mode)
 
@@ -757,7 +946,7 @@ def bg_color_click(event):
     selection = profile_lstbox.curselection()
     if len(selection) <= 0:
         return
-    result = askcolor(color=profile_list[selection[0]].bg_color, title="Background color for " + profile_list[selection[0]].name + " profile")[0]
+    result = askcolor_with_favorites(profile_list[selection[0]].bg_color, "Background color for " + profile_list[selection[0]].name + " profile")
     if result is None:
         return
     last_rgb = result
@@ -766,12 +955,14 @@ def bg_color_click(event):
 
 def kd_color_click(event):
     global profile_list
+    global last_rgb
     selection = profile_lstbox.curselection()
     if len(selection) <= 0 or kd_color_var.get() == 0:
         return
-    result = askcolor(color=profile_list[selection[0]].kd_color, title="Activation color for " + profile_list[selection[0]].name + " profile")[0]
+    result = askcolor_with_favorites(profile_list[selection[0]].kd_color, "Activation color for " + profile_list[selection[0]].name + " profile")
     if result is None:
         return
+    last_rgb = result
     profile_list[selection[0]].kd_color = result
     update_profile_display()
 
@@ -1113,12 +1304,14 @@ def key_button_click(button_widget):
         custom_key_color_checkbox.config(state=DISABLED)
         allow_abort_checkbox.config(state=DISABLED)
         dont_repeat_checkbox.config(state=DISABLED)
+        timed_key_press_button.config(state=DISABLED)
         script_textbox.delete(1.0, 'end')
         return
 
     custom_key_color_checkbox.config(state=NORMAL)
     allow_abort_checkbox.config(state=NORMAL)
     dont_repeat_checkbox.config(state=NORMAL)
+    timed_key_press_button.config(state=NORMAL)
     if thissss_key.color is None:
         custom_key_color_checkbox.deselect()
         key_color_button.config(background=default_button_color)
@@ -1733,7 +1926,7 @@ def key_color_button_click(event):
     if profile_list[profile_index].keylist[selected_key] is not None:
         # Color picker should have an initial colour set in colour picker
         initial_color = profile_list[profile_index].keylist[selected_key].color if profile_list[profile_index].keylist[selected_key].color is not None else profile_list[profile_index].bg_color
-        result = askcolor(color=initial_color, title="Key color for " + profile_list[profile_index].keylist[selected_key].name)[0]
+        result = askcolor_with_favorites(initial_color, "Key color for " + profile_list[profile_index].keylist[selected_key].name)
         if result is None:
             return
         last_rgb = result
@@ -1830,6 +2023,34 @@ script_textbox.bind("<<Modified>>", script_textbox_event)
 script_textbox.tag_configure("error", background="#ffff00")
 
 add_right_click_menu(script_textbox)
+
+def insert_timed_key_press_click():
+    if is_key_selected() == False:
+        return
+    key_name = simpledialog.askstring("Timed Key Press", "Key name or single character?", parent=scripts_lf)
+    if key_name is None:
+        return
+    key_name = clean_input(key_name, is_filename=False).upper()
+    if len(key_name) == 0:
+        return
+    if len(key_name) != 1 and key_name not in ds_hid_keyname_dict:
+        messagebox.showerror("Timed Key Press", "Enter a single character or a valid duckyScript key name.")
+        return
+    default_delay = simpledialog.askinteger("Timed Key Press", "DEFAULTDELAY (ms)?", parent=scripts_lf, minvalue=0, initialvalue=20)
+    if default_delay is None:
+        return
+    insert_text = f"DEFAULTDELAY {default_delay}\nKEYDOWN {key_name}\nKEYUP {key_name}\n"
+    if script_textbox.compare("insert", "!=", "1.0") and script_textbox.get("insert - 1 chars") != '\n':
+        insert_text = '\n' + insert_text
+    if script_textbox.compare("insert", "<", "end-1c") and script_textbox.get("insert") != '\n':
+        insert_text += '\n'
+    script_textbox.insert("insert", insert_text)
+    script_textbox.focus_set()
+    script_textbox_modified()
+    check_syntax(True)
+
+timed_key_press_button = Button(scripts_lf, text="Timed Key", command=insert_timed_key_press_click, state=DISABLED)
+timed_key_press_button.place(x=scaled_size(225), y=scaled_size(16), width=scaled_size(70), height=scaled_size(24))
 
 def on_press_rb_click():
     profile_index = profile_lstbox.curselection()[0]

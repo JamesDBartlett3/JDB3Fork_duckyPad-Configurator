@@ -8,6 +8,8 @@ if 'darwin' not in sys.platform:
     print("this script is for macOS only!")
     exit()
 
+BUILD_WITHOUT_CONSOLE = '--noconsole' in sys.argv[1:]
+
 def clean(additional=None):
 	removethese = ['__pycache__','build','dist','*.spec']
 	if additional:
@@ -42,7 +44,10 @@ exe_file_name = f"duckypad_config_{THIS_VERSION.replace('.', '_')}_macOS_ARM"
 
 # --noconsole
 clean(additional='duckypad*.zip')
-PyInstaller.__main__.run(['duckypad_config.py','--icon=_icon.icns', '--onefile', f"--name={exe_file_name}"])
+pyinstaller_args = ['duckypad_config.py','--icon=_icon.icns', '--onefile', f"--name={exe_file_name}"]
+if BUILD_WITHOUT_CONSOLE:
+	pyinstaller_args.append('--noconsole')
+PyInstaller.__main__.run(pyinstaller_args)
 
 
 output_folder_path = os.path.join('.', "dist")

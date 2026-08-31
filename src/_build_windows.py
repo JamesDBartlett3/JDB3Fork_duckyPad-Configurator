@@ -8,6 +8,8 @@ if 'win32' not in sys.platform:
     print("this script is for windows only!")
     exit()
 
+BUILD_WITHOUT_CONSOLE = '--noconsole' in sys.argv[1:]
+
 def clean(additional=None):
     removethese = ['__pycache__','build','dist','*.spec']
     if additional:
@@ -43,11 +45,14 @@ if THIS_VERSION is None:
 clean(additional='duckypad*.zip')
 
 # Using --collect-all=certifi to automatically grab all certs and modules
-PyInstaller.__main__.run([
+pyinstaller_args = [
     'duckypad_config.py',
     '--icon=_icon.ico',
     '--collect-all=certifi'
-])
+]
+if BUILD_WITHOUT_CONSOLE:
+    pyinstaller_args.append('--noconsole')
+PyInstaller.__main__.run(pyinstaller_args)
 
 output_folder_path = os.path.join('.', "dist")
 original_name = os.path.join(output_folder_path, "duckypad_config")
