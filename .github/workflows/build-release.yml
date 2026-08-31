@@ -1,0 +1,65 @@
+name: Build and release Windows app
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/build-release.yml"
+      - "src/**"
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build Windows package
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: "src/requirements.txt"
+
+      - name: Install dependencies
+        run: python -m pip install -r src/requirements.txt
+
+      - name: Build standalone package
+        working-directory: src
+        run: python _build_windows.py --noconsole
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: duckypad-config-windows
+          path: src/duckypad_config_*_win10_x64.zip
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish GitHub release
+    needs: build-windows
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: duckypad-config-windows
+          path: release-assets
+
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag_name="${GITHUB_REF#refs/tags/}"
+          gh release view "$tag_name" >/dev/null 2>&1 || gh release create "$tag_name" --title "$tag_name" --notes "Automated Windows build for $tag_name"
+          gh release upload "$tag_name" release-assets/* --clobber
