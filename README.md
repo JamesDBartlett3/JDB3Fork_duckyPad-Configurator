@@ -23,8 +23,8 @@ This is the software that configures [duckyPad Macropads](duckypad.com)!
 
 ### Standalone Build Notes
 
-* Windows standalone builds are created from `/home/runner/work/JDB3Fork_duckyPad-Configurator/JDB3Fork_duckyPad-Configurator/src/_build_windows.py`
-* macOS standalone builds are created from `/home/runner/work/JDB3Fork_duckyPad-Configurator/JDB3Fork_duckyPad-Configurator/src/_build_mac_pyinstaller.py`
+* Windows standalone builds are created from `src/_build_windows.py`
+* macOS standalone builds are created from `src/_build_mac_pyinstaller.py`
 * To build a Windows package without the console window, use the workflow above or run the Windows build script with `--noconsole`
 
 ### Feedbacks
