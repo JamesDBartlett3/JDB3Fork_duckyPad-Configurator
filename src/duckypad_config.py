@@ -1867,8 +1867,10 @@ key_char_limit_label.place(x=scaled_size(5), y=scaled_size(7))
 root.update()
 
 def keyname_textbox_modified_event(event):
-    key_rename_click()
     key_name_textbox.tk.call(key_name_textbox._w, 'edit', 'modified', 0)
+    if root.focus_get() is not key_name_textbox:
+        return
+    key_rename_click()
 
 key_name_textbox = Text(name_editor_lf, state=DISABLED, wrap="word")
 key_name_textbox.place(x=scaled_size(107), y=scaled_size(5), width=scaled_size(80), height=scaled_size(40))
