@@ -345,8 +345,11 @@ def reset_key_button_relief():
     for item in key_button_list:
         item.config(borderwidth=1, relief="solid")
 
+popup_menu_list = []
+
 def add_right_click_menu(text_widget):
     menu = Menu(text_widget, tearoff=0)
+    popup_menu_list.append(menu)
 
     # --- Standard Clipboard ---
     menu.add_command(label="Cut", command=lambda: text_widget.event_generate("<<Cut>>"))
@@ -402,6 +405,7 @@ def ui_reset():
     profile_up_button.config(state=DISABLED)
     profile_down_button.config(state=DISABLED)
     profile_dupe_button.config(state=DISABLED)
+    gradient_button.config(state=DISABLED)
     save_button.config(state=DISABLED)
     keydown_color_checkbox.config(state=DISABLED)
     dim_unused_keys_checkbox.config(state=DISABLED)
@@ -501,6 +505,7 @@ def select_root_folder(root_path=None, is_dir_for_dp24=None):
         convert_key_order_dp20_to_dp24(profile_list)
 
     ui_reset()
+    reset_undo_stacks() # history from the previously loaded folder no longer applies
     update_profile_display()
     enable_buttons()
     try:
@@ -551,6 +556,7 @@ def ask_user_to_select_a_duckypad(dp_info_list):
     dp_select_window.title("Select-a-duckyPad")
     dp_select_window.geometry(f"{scaled_size(360)}x{scaled_size(320)}")
     dp_select_window.resizable(width=FALSE, height=FALSE)
+    bring_dialog_to_front(dp_select_window)
     dp_select_window.grab_set()
     dp_select_window.focus_set()
 
@@ -676,6 +682,7 @@ def enable_buttons():
     profile_up_button.config(state=NORMAL)
     profile_down_button.config(state=NORMAL)
     profile_dupe_button.config(state=NORMAL)
+    gradient_button.config(state=NORMAL)
     save_button.config(state=NORMAL)
     backup_button.config(state=NORMAL)
     keydown_color_checkbox.config(state=NORMAL)
@@ -697,6 +704,7 @@ def profile_shift_up():
         return
     source = selection[0]
     destination = selection[0] - 1
+    record_undo()
     profile_list[destination], profile_list[source] = profile_list[source], profile_list[destination]
     update_profile_display()
     profile_lstbox.selection_clear(0, len(profile_list))
@@ -710,6 +718,7 @@ def profile_shift_down():
         return
     source = selection[0]
     destination = selection[0] + 1
+    record_undo()
     profile_list[destination], profile_list[source] = profile_list[source], profile_list[destination]
     update_profile_display()
     profile_lstbox.selection_clear(0, len(profile_list))
@@ -720,6 +729,16 @@ def adapt_color(rgb_tuple):
     if (rgb_tuple[0]*0.299 + rgb_tuple[1]*0.587 + rgb_tuple[2]*0.114) > 145:
         return "black"
     return 'white'
+
+def bring_dialog_to_front(dialog):
+    # stack a freshly opened (or re-shown) dialog above every existing one
+    if dialog is None or not dialog.winfo_exists():
+        return
+    dialog.transient(root)
+    dialog.lift()
+    dialog.attributes("-topmost", True)
+    dialog.focus_force()
+    dialog.after(200, lambda: dialog.attributes("-topmost", False) if dialog.winfo_exists() else None)
 
 def askcolor_with_favorites(initial_color, title):
     current_color = normalize_rgb_tuple(initial_color)
@@ -738,6 +757,7 @@ def askcolor_with_favorites(initial_color, title):
     dialog.title(title)
     dialog.resizable(False, False)
     dialog.transient(root)
+    bring_dialog_to_front(dialog)
 
     current_color_label = Label(dialog, text="Current color:")
     current_color_label.grid(row=0, column=0, padx=10, pady=(10, 5), sticky='w')
@@ -934,6 +954,7 @@ def dim_unused_keys_click():
     selection = profile_lstbox.curselection()
     if len(selection) <= 0:
         return
+    record_undo()
     profile_list[selection[0]].dim_unused = bool(dim_unused_keys_checkbox_var.get())
     update_profile_display()
 
@@ -956,6 +977,7 @@ def bg_color_click(event):
     result = askcolor_with_favorites(profile_list[selection[0]].bg_color, "Background color for " + profile_list[selection[0]].name + " profile")
     if result is None:
         return
+    record_undo()
     last_rgb = result
     profile_list[selection[0]].bg_color = result
     update_profile_display()
@@ -969,6 +991,7 @@ def kd_color_click(event):
     result = askcolor_with_favorites(profile_list[selection[0]].kd_color, "Activation color for " + profile_list[selection[0]].name + " profile")
     if result is None:
         return
+    record_undo()
     last_rgb = result
     profile_list[selection[0]].kd_color = result
     update_profile_display()
@@ -1005,6 +1028,7 @@ def profile_add_click():
     if len(answer) <= 0:# or answer in [x.name for x in profile_list]:
         return
 
+    record_undo()
     new_profile = duck_objs.dp_profile()
     new_profile.name = answer
     profile_list.insert(insert_point, new_profile)
@@ -1018,6 +1042,7 @@ def profile_remove_click():
     selection = profile_lstbox.curselection()
     if len(selection) <= 0:
         return
+    record_undo()
     profile_list.pop(selection[0])
     update_profile_display()
     profile_lstbox.selection_clear(0, len(profile_list))
@@ -1038,6 +1063,7 @@ def profile_dupe_click():
     answer = clean_input(answer, MAX_PROFILE_NAME_LEN)
     if len(answer) <= 0: # or answer in [x.name for x in profile_list]:
         return
+    record_undo()
     new_profile = copy.deepcopy(profile_list[selection[0]])
     new_profile.name = answer
     profile_list.insert(selection[0] + 1, new_profile)
@@ -1057,6 +1083,7 @@ def profile_rename_click():
     answer = clean_input(answer, MAX_PROFILE_NAME_LEN)
     if len(answer) <= 0 or answer in [x.name for x in profile_list]:
         return
+    record_undo()
     profile_list[selection[0]].name = answer
     update_profile_display()
 
@@ -1347,6 +1374,7 @@ def halfstep_checkbox_click():
     if len(profile_lstbox.curselection()) <= 0:
         return
     profile_index = profile_lstbox.curselection()[0]
+    record_undo()
     profile_list[profile_index].is_upper_re_halfstep = bool(half_step_upper_checkbox_var.get())
     profile_list[profile_index].is_lower_re_halfstep = bool(half_step_lower_checkbox_var.get())
 
@@ -1397,8 +1425,9 @@ def stdlib_fetch_click():
 def edit_header_button_click(global_setting_obj):
     header_edit_window = Toplevel(root)
     header_edit_window.title(edit_header_button_name)
+    bring_dialog_to_front(header_edit_window)
 
-    header_edit_window.geometry(f"{scaled_size(640)}x{scaled_size(600)}") 
+    header_edit_window.geometry(f"{scaled_size(640)}x{scaled_size(600)}")
     
     # pack the StdLib frame at the BOTTOM first, so it's always visible.
     stdlib_frame = LabelFrame(header_edit_window, text="duckyPad Standard Library")
@@ -1543,10 +1572,10 @@ BUTTON_HEIGHT = scaled_size(25)
 BUTTON_Y_POS = scaled_size(285)
 
 profile_add_button = Button(profiles_lf, text="New", command=profile_add_click, state=DISABLED)
-profile_add_button.place(x=PADDING*2, y=BUTTON_Y_POS, width=BUTTON_WIDTH, height=BUTTON_HEIGHT)
+profile_add_button.place(x=PADDING*2, y=BUTTON_Y_POS, width=scaled_size(55), height=BUTTON_HEIGHT)
 
 profile_dupe_button = Button(profiles_lf, text="Duplicate", command=profile_dupe_click, state=DISABLED)
-profile_dupe_button.place(x=PADDING * 2.5 + BUTTON_WIDTH, y=BUTTON_Y_POS, width=BUTTON_WIDTH, height=BUTTON_HEIGHT)
+profile_dupe_button.place(x=PADDING*2 + scaled_size(60), y=BUTTON_Y_POS, width=scaled_size(78), height=BUTTON_HEIGHT)
 
 profile_rename_button = Button(profiles_lf, text="Rename", command=profile_rename_click, state=DISABLED)
 profile_rename_button.place(x=PADDING * 2.5 + BUTTON_WIDTH + scaled_size(34), y=BUTTON_Y_POS + BUTTON_HEIGHT + int(PADDING/2), width=scaled_size(70), height=BUTTON_HEIGHT)
@@ -1582,6 +1611,7 @@ def kd_color_checkbox_click():
     selection = profile_lstbox.curselection()
     if len(selection) <= 0:
         return
+    record_undo()
     if kd_color_var.get():
         profile_list[selection[0]].kd_color = last_rgb
     else:
@@ -1591,6 +1621,386 @@ def kd_color_checkbox_click():
 kd_color_var = IntVar()
 keydown_color_checkbox = Checkbutton(profiles_lf, text="Custom Key-down\nColor", variable=kd_color_var, command=kd_color_checkbox_click, state=DISABLED, anchor='w', justify='left')
 keydown_color_checkbox.place(x=scaled_size(20), y=scaled_size(370))
+
+# ------------- Key color gradient -------------
+GRADIENT_COMPASS_LAYOUT = [
+    [('NW', '↖'), ('N', '↑'), ('NE', '↗')],
+    [('W', '←'), ('C', '◎'), ('E', '→')],
+    [('SW', '↙'), ('S', '↓'), ('SE', '↘')],
+]
+
+GRADIENT_DIRECTION_VECTORS = {
+    'N': (-1, 0), 'NE': (-1, 1), 'E': (0, 1), 'SE': (1, 1),
+    'S': (1, 0), 'SW': (1, -1), 'W': (0, -1), 'NW': (-1, -1),
+}
+
+GRADIENT_MAX_STOPS = {'N': 5, 'S': 5, 'E': 4, 'W': 4, 'C': 4, 'NE': 8, 'NW': 8, 'SE': 8, 'SW': 8}
+
+gradient_dialog = None
+gradient_direction = None
+gradient_stops = []
+gradient_compass_button_list = {}
+gradient_stop_row_frame = None
+gradient_stop_button_list = []
+gradient_add_stop_button = None
+
+def gradient_lerp_color(start_color, end_color, t):
+    return tuple(int(round(start_color[i] + (end_color[i] - start_color[i]) * t)) for i in range(3))
+
+def gradient_sample_stops(stops, t):
+    # piecewise blend: stop 0 sits at t=0, last stop at t=1, evenly spaced between
+    if t <= 0:
+        return stops[0]
+    if t >= 1:
+        return stops[-1]
+    segment = t * (len(stops) - 1)
+    index = int(segment)
+    fraction = segment - index
+    return gradient_lerp_color(stops[index], stops[index + 1], fraction)
+
+def gradient_observation_max_error(stops, observations):
+    max_error = 0
+    for t, color in observations:
+        sample = gradient_sample_stops(stops, t)
+        for channel in range(3):
+            max_error = max(max_error, abs(sample[channel] - color[channel]))
+    return max_error
+
+def solve_linear_system(matrix, rhs):
+    # gauss-jordan with partial pivoting; returns (values, free_columns),
+    # free columns come back as 0 and are the caller's problem
+    size = len(rhs)
+    aug = [list(matrix[i]) + [float(rhs[i])] for i in range(size)]
+    pivot_cols = []
+    row = 0
+    for col in range(size):
+        best_row, best_val = None, 1e-9
+        for r in range(row, size):
+            if abs(aug[r][col]) > best_val:
+                best_row, best_val = r, abs(aug[r][col])
+        if best_row is None:
+            continue
+        aug[row], aug[best_row] = aug[best_row], aug[row]
+        pivot = aug[row][col]
+        aug[row] = [x / pivot for x in aug[row]]
+        for r in range(size):
+            if r != row and aug[r][col] != 0:
+                factor = aug[r][col]
+                aug[r] = [x - factor * y for x, y in zip(aug[r], aug[row])]
+        pivot_cols.append(col)
+        row += 1
+        if row >= size:
+            break
+    values = [0.0] * size
+    for r, c in enumerate(pivot_cols):
+        values[c] = aug[r][size]
+    return values, [c for c in range(size) if c not in pivot_cols]
+
+def refine_gradient_stops(stops, observations):
+    # color rounding blurs the least-squares solve by a fraction of a unit;
+    # walk single-channel +-1 nudges to recover the exact integer stops
+    stops = [tuple(stop) for stop in stops]
+    best_error = gradient_observation_max_error(stops, observations)
+    for _ in range(4):
+        improved = False
+        for stop_index in range(len(stops)):
+            for channel in range(3):
+                for delta in (1, -1):
+                    candidate = [list(stop) for stop in stops]
+                    candidate[stop_index][channel] += delta
+                    if not 0 <= candidate[stop_index][channel] <= 255:
+                        continue
+                    candidate = [tuple(stop) for stop in candidate]
+                    error = gradient_observation_max_error(candidate, observations)
+                    if error < best_error:
+                        stops, best_error, improved = candidate, error, True
+        if not improved or best_error == 0:
+            break
+    return stops
+
+def gradient_stops_from_observations(observations, stop_count):
+    # least-squares stop colors so piecewise sampling reproduces the observed
+    # key colors; returns (stops, max_error), or (None, 0) if unresolved
+    rows = []
+    for t, color in observations:
+        segment = min(int(t * (stop_count - 1)), stop_count - 2)
+        fraction = t * (stop_count - 1) - segment
+        coefficients = [0.0] * stop_count
+        coefficients[segment] = 1.0 - fraction
+        coefficients[segment + 1] = fraction
+        rows.append((coefficients, color))
+    normal = [[sum(row[0][i] * row[0][j] for row in rows) for j in range(stop_count)] for i in range(stop_count)]
+    solved_channels = []
+    for channel in range(3):
+        rhs = [sum(row[0][i] * row[1][channel] for row in rows) for i in range(stop_count)]
+        solved_channels.append(solve_linear_system(normal, rhs))
+    free_columns = set()
+    for values, free in solved_channels:
+        free_columns.update(free)
+    stops = []
+    for stop_index in range(stop_count):
+        if stop_index in free_columns:
+            stops.append(None) # unconstrained by any key, fill from neighbors
+        else:
+            stops.append(tuple(max(0, min(255, int(round(solved_channels[channel][0][stop_index])))) for channel in range(3)))
+    for _ in range(2):
+        for stop_index in range(stop_count):
+            if stops[stop_index] is not None:
+                continue
+            left = stops[stop_index - 1] if stop_index > 0 else None
+            right = stops[stop_index + 1] if stop_index < stop_count - 1 else None
+            if left is not None and right is not None:
+                stops[stop_index] = tuple((left[channel] + right[channel]) // 2 for channel in range(3))
+            elif left is not None:
+                stops[stop_index] = left
+            elif right is not None:
+                stops[stop_index] = right
+    if any(stop is None for stop in stops):
+        return None, 0
+    max_error = gradient_observation_max_error(stops, observations)
+    if max_error > 0:
+        stops = refine_gradient_stops(stops, observations)
+        max_error = gradient_observation_max_error(stops, observations)
+    return stops, max_error
+
+def infer_profile_gradient(profile_index):
+    # reconstruct (direction, stops) from the profile's key colors, so the
+    # dialog can offer a painted gradient for editing in place
+    this_profile = profile_list[profile_index]
+    best = None # (max_error, direction, stops)
+    for direction in ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW', 'C']:
+        t_values = compute_key_gradient_t_values(profile_index, direction)
+        observations = []
+        for key_index in range(MECH_OBSW_COUNT):
+            this_key = this_profile.keylist[key_index]
+            if this_key is not None and this_key.color is not None:
+                observations.append((t_values[key_index], this_key.color))
+        if len(observations) < 2:
+            continue
+        for stop_count in range(2, GRADIENT_MAX_STOPS[direction] + 1):
+            stops, max_error = gradient_stops_from_observations(observations, stop_count)
+            if stops is None:
+                continue
+            if max_error == 0:
+                return direction, stops
+            if best is None or max_error < best[0]:
+                best = (max_error, direction, stops)
+    if best is not None and best[0] <= 2:
+        return best[1], best[2]
+    return None
+
+def compute_key_gradient_t_values(profile_index, direction):
+    # t runs 0 (start color) to 1 (end color) for each mech switch,
+    # measured in the orientation the keys are displayed in
+    if profile_list[profile_index].is_landscape:
+        display_row_count = SW_MATRIX_NUM_COLS
+        display_col_count = SW_MATRIX_NUM_ROWS
+        def display_coords(key_index):
+            row = key_index // SW_MATRIX_NUM_COLS
+            col = key_index % SW_MATRIX_NUM_COLS
+            return (SW_MATRIX_NUM_COLS - 1 - col, row)
+    else:
+        display_row_count = SW_MATRIX_NUM_ROWS
+        display_col_count = SW_MATRIX_NUM_COLS
+        def display_coords(key_index):
+            return (key_index // SW_MATRIX_NUM_COLS, key_index % SW_MATRIX_NUM_COLS)
+
+    coords = [display_coords(x) for x in range(MECH_OBSW_COUNT)]
+
+    if direction == 'C': # bullseye, solid color rings stepping out from the middle pair
+        # rings are computed on the default grid on purpose: the transpose the
+        # landscape view applies preserves Manhattan distance, so ring membership
+        # is identical either way
+        center_row = (SW_MATRIX_NUM_ROWS - 1) // 2
+        center_cols = ((SW_MATRIX_NUM_COLS - 1) // 2, SW_MATRIX_NUM_COLS // 2)
+        def ring_number(key_index):
+            row = key_index // SW_MATRIX_NUM_COLS
+            col = key_index % SW_MATRIX_NUM_COLS
+            return min(abs(row - center_row) + abs(col - center_col) for center_col in center_cols)
+        max_ring = max(ring_number(x) for x in range(MECH_OBSW_COUNT)) or 1
+        return [ring_number(x) / max_ring for x in range(MECH_OBSW_COUNT)]
+
+    vector = GRADIENT_DIRECTION_VECTORS[direction]
+    row_denom = float(display_row_count - 1) or 1.0
+    col_denom = float(display_col_count - 1) or 1.0
+    projections = [vector[0] * (row / row_denom) + vector[1] * (col / col_denom) for row, col in coords]
+    p_min = min(projections)
+    span = (max(projections) - p_min) or 1.0
+    return [(p - p_min) / span for p in projections]
+
+def apply_key_gradient():
+    if gradient_direction is None or len(gradient_stops) < 2:
+        return
+    if len(profile_lstbox.curselection()) <= 0:
+        return
+    profile_index = profile_lstbox.curselection()[0]
+    record_undo() # every live paint (direction click, stop edit, reverse) is one undo step
+    t_values = compute_key_gradient_t_values(profile_index, gradient_direction)
+    for key_index in range(MECH_OBSW_COUNT):
+        this_key = profile_list[profile_index].keylist[key_index]
+        if this_key is None:
+            continue # empty slots stay empty
+        this_key.color = gradient_sample_stops(gradient_stops, t_values[key_index])
+    update_key_button_appearances(profile_index)
+
+def gradient_stop_max():
+    return GRADIENT_MAX_STOPS.get(gradient_direction, max(GRADIENT_MAX_STOPS.values()))
+
+def rebuild_gradient_stop_row():
+    global gradient_add_stop_button, gradient_stop_button_list
+    for child in gradient_stop_row_frame.winfo_children():
+        child.destroy()
+    gradient_stop_button_list = []
+    for stop_index, stop_color in enumerate(gradient_stops):
+        this_button = Button(gradient_stop_row_frame, width=3, borderwidth=1, relief="solid",
+                             background=rgb_to_hex(stop_color),
+                             command=lambda value=stop_index: gradient_stop_click(value))
+        this_button.bind("<Button-3>", lambda event, value=stop_index: gradient_stop_remove_click(value))
+        this_button.bind("<Button-2>", lambda event, value=stop_index: gradient_stop_remove_click(value))
+        this_button.bind("<Control-Button-1>", lambda event, value=stop_index: gradient_stop_remove_click(value))
+        this_button.grid(row=0, column=stop_index, padx=2, pady=2)
+        gradient_stop_button_list.append(this_button)
+    gradient_add_stop_button = Button(gradient_stop_row_frame, text="+", width=3,
+                                      command=gradient_stop_add_click,
+                                      state=NORMAL if len(gradient_stops) < gradient_stop_max() else DISABLED)
+    gradient_add_stop_button.grid(row=0, column=len(gradient_stops), padx=2, pady=2)
+
+def gradient_stop_click(stop_index):
+    result = askcolor_with_favorites(gradient_stops[stop_index], "Gradient stop %d color" % (stop_index + 1))
+    if result is None:
+        return
+    gradient_stops[stop_index] = result
+    gradient_stop_button_list[stop_index].config(background=rgb_to_hex(result))
+    apply_key_gradient()
+
+def gradient_stop_add_click():
+    if len(gradient_stops) >= gradient_stop_max():
+        return
+    gradient_stops.append(gradient_stops[-1])
+    rebuild_gradient_stop_row()
+    apply_key_gradient()
+
+def gradient_stop_remove_click(stop_index):
+    if len(gradient_stops) <= 2:
+        return
+    del gradient_stops[stop_index]
+    rebuild_gradient_stop_row()
+    apply_key_gradient()
+
+def refresh_gradient_compass_highlight():
+    for this_direction, this_button in gradient_compass_button_list.items():
+        if this_direction == gradient_direction:
+            this_button.config(relief=SUNKEN, borderwidth=3)
+        else:
+            this_button.config(relief=RAISED, borderwidth=1)
+
+def gradient_direction_click(direction):
+    global gradient_direction, gradient_stops
+    gradient_direction = direction
+    max_stops = gradient_stop_max()
+    if len(gradient_stops) > max_stops:
+        # resample to fit this direction, keeping the overall gradient shape
+        gradient_stops = [gradient_sample_stops(gradient_stops, x / (max_stops - 1)) for x in range(max_stops)]
+    rebuild_gradient_stop_row() # also refreshes the + button against this direction's cap
+    refresh_gradient_compass_highlight()
+    apply_key_gradient()
+
+def gradient_reverse_click():
+    global gradient_stops
+    if len(gradient_stops) < 2:
+        return
+    gradient_stops = list(reversed(gradient_stops))
+    rebuild_gradient_stop_row()
+    apply_key_gradient()
+
+def gradient_clear_click():
+    if len(profile_lstbox.curselection()) <= 0:
+        return
+    profile_index = profile_lstbox.curselection()[0]
+    record_undo()
+    this_profile = profile_list[profile_index]
+    for key_index in range(MECH_OBSW_COUNT):
+        this_key = this_profile.keylist[key_index]
+        if this_key is not None:
+            this_key.color = None
+    update_key_button_appearances(profile_index)
+
+def close_gradient_dialog():
+    global gradient_dialog, gradient_compass_button_list, gradient_stop_row_frame
+    global gradient_stop_button_list, gradient_add_stop_button
+    if gradient_dialog is not None:
+        gradient_dialog.destroy()
+        gradient_dialog = None
+    gradient_compass_button_list = {}
+    gradient_stop_row_frame = None
+    gradient_stop_button_list = []
+    gradient_add_stop_button = None
+
+def gradient_click():
+    global gradient_dialog, gradient_direction, gradient_stops
+    global gradient_stop_row_frame, gradient_stop_button_list, gradient_add_stop_button
+    global gradient_compass_button_list
+    if len(profile_lstbox.curselection()) <= 0:
+        return
+    if gradient_dialog is not None and gradient_dialog.winfo_exists():
+        bring_dialog_to_front(gradient_dialog)
+        return
+    profile_index = profile_lstbox.curselection()[0]
+    reconstructed = infer_profile_gradient(profile_index) # recomputed on every open
+    if reconstructed is not None:
+        gradient_direction, gradient_stops = reconstructed[0], list(reconstructed[1])
+    else:
+        base_color = normalize_rgb_tuple(profile_list[profile_index].bg_color)
+        gradient_stops = [base_color, tuple(255 - x for x in base_color)]
+        gradient_direction = None
+
+    gradient_dialog = Toplevel(root)
+    gradient_dialog.title("Key Color Gradient")
+    gradient_dialog.resizable(False, False)
+    gradient_dialog.transient(root)
+    gradient_dialog.protocol("WM_DELETE_WINDOW", close_gradient_dialog)
+
+    stops_label = Label(gradient_dialog, text="Color stops:")
+    stops_label.grid(row=0, column=0, padx=(10, 4), pady=(10, 4), sticky='w')
+    gradient_stop_row_frame = Frame(gradient_dialog)
+    gradient_stop_row_frame.grid(row=0, column=1, columnspan=2, pady=(10, 4), sticky='w')
+
+    compass_frame = Frame(gradient_dialog)
+    compass_frame.grid(row=1, column=0, columnspan=3, padx=10, pady=(6, 2))
+    gradient_compass_button_list = {}
+    for row_index, row_entries in enumerate(GRADIENT_COMPASS_LAYOUT):
+        for col_index, (direction, arrow) in enumerate(row_entries):
+            this_button = Button(compass_frame, text=arrow, width=4, font=(None, 13),
+                                 command=lambda value=direction: gradient_direction_click(value))
+            this_button.grid(row=row_index, column=col_index, padx=3, pady=3)
+            gradient_compass_button_list[direction] = this_button
+    refresh_gradient_compass_highlight()
+
+    hint_label = Label(gradient_dialog, text="Colors blend from tail to arrow head\n◎ radiates from the center out\nClick a stop to edit it · right-click removes it (2 minimum)")
+    hint_label.grid(row=2, column=0, columnspan=3, pady=(0, 4))
+
+    gradient_action_frame = Frame(gradient_dialog)
+    gradient_action_frame.grid(row=3, column=0, columnspan=3, pady=(2, 10))
+    clear_button = Button(gradient_action_frame, text="Clear Key Colors", command=gradient_clear_click)
+    clear_button.grid(row=0, column=0, padx=4)
+    reverse_button = Button(gradient_action_frame, text="Reverse", command=gradient_reverse_click)
+    reverse_button.grid(row=0, column=1, padx=4)
+    close_button = Button(gradient_action_frame, text="Close", command=close_gradient_dialog)
+    close_button.grid(row=0, column=2, padx=4)
+
+    gradient_dialog.bind("<Escape>", lambda event: close_gradient_dialog())
+    # most painting happens while this dialog has focus, so undo works here too
+    gradient_dialog.bind("<Control-z>", undo_event_handler)
+    gradient_dialog.bind("<Control-Z>", redo_event_handler)
+    gradient_dialog.bind("<Control-Shift-Z>", redo_event_handler)
+    gradient_dialog.bind("<Control-y>", redo_event_handler)
+    gradient_dialog.bind("<Control-Y>", redo_event_handler)
+    rebuild_gradient_stop_row()
+    gradient_dialog.geometry("+%d+%d" % (root.winfo_x() + root.winfo_width() - 430, root.winfo_y() + 120))
+    bring_dialog_to_front(gradient_dialog)
+
+gradient_button = Button(profiles_lf, text="Gradient", command=gradient_click, state=DISABLED)
+gradient_button.place(x=PADDING*2 + scaled_size(143), y=BUTTON_Y_POS, width=scaled_size(77), height=BUTTON_HEIGHT)
 
 # ------------- RE frame -----------------
 re_lf = LabelFrame(root, text="Rotary Encoders", width=scaled_size(150), height=scaled_size(205))
@@ -1626,6 +2036,7 @@ def rotate_keys_click():
     selection = profile_lstbox.curselection()
     if len(selection) <= 0:
         return
+    record_undo()
     profile_list[selection[0]].is_landscape = bool(is_in_landscape_var.get())
     update_key_button_appearances(selection[0])
     if(is_key_selected()):
@@ -1701,6 +2112,7 @@ def button_drag_release(event):
     update_key_button_appearances(profile_index)
     reset_key_button_relief()
     if drag_source_button_index is not None and drag_destination_button_index is not None:
+        record_undo()
         profile_list[profile_index].keylist[drag_destination_button_index], profile_list[profile_index].keylist[drag_source_button_index] = profile_list[profile_index].keylist[drag_source_button_index], profile_list[profile_index].keylist[drag_destination_button_index]
         update_profile_display()
         update_keylist_index()
@@ -1890,13 +2302,19 @@ def get_clean_key_name_2lines(user_text):
         pass
     return line1_clean, line2_clean
 
+last_keyname_undo_time = 0
 def key_rename_click():
+    global last_keyname_undo_time
     if is_key_selected() == False:
         return
     profile_index = profile_lstbox.curselection()[0]
     keyname_line1, keyname_line2 = get_clean_key_name_2lines(key_name_textbox.get("1.0", END))
     if len(keyname_line1) == 0:
         return
+    # one undo step per continuous typing burst, not per keystroke
+    if time.time() - last_keyname_undo_time > 1.5:
+        record_undo()
+    last_keyname_undo_time = time.time()
     if profile_list[profile_index].keylist[selected_key] is not None:
         profile_list[profile_index].keylist[selected_key].name = keyname_line1
         profile_list[profile_index].keylist[selected_key].name_line2 = keyname_line2
@@ -1913,6 +2331,7 @@ def key_remove_click():
     if is_key_selected() == False:
         return
     profile_index = profile_lstbox.curselection()[0]
+    record_undo()
     profile_list[profile_index].keylist[selected_key] = None
     update_key_button_appearances(profile_index)
     key_button_click(key_button_list[selected_key])
@@ -1938,6 +2357,7 @@ def key_color_button_click(event):
         result = askcolor_with_favorites(initial_color, "Key color for " + profile_list[profile_index].keylist[selected_key].name)
         if result is None:
             return
+        record_undo()
         last_rgb = result
         profile_list[profile_index].keylist[selected_key].color = result
     update_key_button_appearances(profile_index)
@@ -1949,6 +2369,7 @@ def custom_key_color_click():
     profile_index = profile_lstbox.curselection()[0]
     if profile_list[profile_index].keylist[selected_key] is None:
         return
+    record_undo()
     if key_color_type_var.get():
         profile_list[profile_index].keylist[selected_key].color = last_rgb
     else:
@@ -1962,6 +2383,7 @@ def allow_abort_click():
     profile_index = profile_lstbox.curselection()[0]
     if profile_list[profile_index].keylist[selected_key] is None:
         return
+    record_undo()
     profile_list[profile_index].keylist[selected_key].allow_abort = allow_abort_var.get()
     print(profile_list[profile_index].keylist[selected_key].allow_abort)
 
@@ -1971,6 +2393,7 @@ def dont_repeat_click():
     profile_index = profile_lstbox.curselection()[0]
     if profile_list[profile_index].keylist[selected_key] is None:
         return
+    record_undo()
     profile_list[profile_index].keylist[selected_key].dont_repeat = dont_repeat_var.get()
     print(profile_list[profile_index].keylist[selected_key].dont_repeat)
 
@@ -2164,6 +2587,7 @@ def import_profile_click():
     if this_profile.name is None:
         messagebox.showerror("Error", f"Invalid Profile")
         return
+    record_undo()
     profile_list.append(this_profile)
     update_profile_display()
 
@@ -2191,6 +2615,7 @@ def export_profile_click():
     pf_select_window.title("Select-a-Profile")
     pf_select_window.geometry(f"{scaled_size(256)}x{scaled_size(390)}")
     pf_select_window.resizable(width=FALSE, height=FALSE)
+    bring_dialog_to_front(pf_select_window)
     pf_select_window.grab_set()
     pf_select_window.focus_set()
 
@@ -2377,6 +2802,7 @@ def key_paste_click():
     if copied_key is None or key_copy_paste_menu_target is None or len(profile_lstbox.curselection()) <= 0:
         return
     profile_index = profile_lstbox.curselection()[0]
+    record_undo()
     new_key = copy.deepcopy(copied_key)
     new_key.index = key_copy_paste_menu_target + 1
     profile_list[profile_index].keylist[key_copy_paste_menu_target] = new_key
@@ -2389,6 +2815,7 @@ def key_paste_code_click(script_part):
     if copied_key is None or key_copy_paste_menu_target is None or len(profile_lstbox.curselection()) <= 0:
         return
     profile_index = profile_lstbox.curselection()[0]
+    record_undo()
     target_key = profile_list[profile_index].keylist[key_copy_paste_menu_target]
     if target_key is None:
         target_key = duck_objs.dp_key()
@@ -2413,6 +2840,7 @@ def key_paste_style_click(style_part):
     if copied_key is None or key_copy_paste_menu_target is None or len(profile_lstbox.curselection()) <= 0:
         return
     profile_index = profile_lstbox.curselection()[0]
+    record_undo()
     target_key = profile_list[profile_index].keylist[key_copy_paste_menu_target]
     if target_key is None:
         target_key = duck_objs.dp_key()
@@ -2463,6 +2891,101 @@ for button in key_button_list:
     button.bind("<Button-3>", show_key_copy_paste_menu)
     button.bind("<Button-2>", show_key_copy_paste_menu) # macOS specific often
     button.bind("<Control-Button-1>", show_key_copy_paste_menu)
+
+popup_menu_list.append(key_copy_paste_menu)
+
+def dismiss_popup_menus_on_left_click(event):
+    if isinstance(event.widget, Menu):
+        return # clicks on a posted menu or its cascades must still select items
+    if event.state & 0x0004: # Control-Button-1 opens the key menu, don't fight it
+        return
+    for popup_menu in popup_menu_list:
+        popup_menu.unpost()
+
+# tk_popup drops its grab as soon as it posts, so on X11 nothing dismisses the
+# menu when clicking elsewhere; do it explicitly
+root.bind_all("<Button-1>", dismiss_popup_menus_on_left_click, add="+")
+
+# ------------- Undo / redo (Ctrl+Z, Ctrl+Shift+Z) -------------
+# snapshot the whole profile tree before each undoable edit; script text keeps
+# using the script textbox's own Tk undo instead
+undo_stack = []
+redo_stack = []
+UNDO_STACK_LIMIT = 50
+
+def capture_undo_snapshot():
+    selection = profile_lstbox.curselection()
+    return (copy.deepcopy(profile_list),
+            selection[0] if len(selection) > 0 else None,
+            selected_key)
+
+def record_undo():
+    undo_stack.append(capture_undo_snapshot())
+    if len(undo_stack) > UNDO_STACK_LIMIT:
+        undo_stack.pop(0)
+    redo_stack.clear()
+
+def reset_undo_stacks():
+    undo_stack.clear()
+    redo_stack.clear()
+
+def restore_undo_snapshot(snapshot):
+    global profile_list
+    profile_list, profile_index, key_index = snapshot
+    profile_lstbox.selection_clear(0, END)
+    update_profile_display() # refresh list content, clear the key editor
+    if profile_index is not None and profile_index < len(profile_list):
+        profile_lstbox.selection_set(profile_index)
+    update_profile_display()
+    if len(profile_lstbox.curselection()) > 0 and key_index is not None:
+        key_button_click(key_button_list[key_index]) # reload the editor from the restored key
+        return
+    scripts_lf.place_forget() # nothing to select: match a fresh profile switch
+    empty_script_label.place(x=scaled_size(800), y=scaled_size(200))
+    key_name_textbox.delete('1.0', 'end')
+    key_name_textbox.config(state=DISABLED)
+
+def undo_click():
+    if len(undo_stack) <= 0:
+        return
+    redo_stack.append(capture_undo_snapshot())
+    restore_undo_snapshot(undo_stack.pop())
+
+def redo_click():
+    if len(redo_stack) <= 0:
+        return
+    undo_stack.append(capture_undo_snapshot())
+    restore_undo_snapshot(redo_stack.pop())
+
+_last_undo_event_serial = None
+_last_redo_event_serial = None
+
+def undo_event_handler(event):
+    global _last_undo_event_serial
+    if event.serial == _last_undo_event_serial:
+        return # a toplevel lists itself twice in its own bindtags
+    _last_undo_event_serial = event.serial
+    if isinstance(event.widget, (Text, Entry, Spinbox)):
+        return # text-style widgets keep their own editing behavior
+    undo_click()
+
+def redo_event_handler(event):
+    global _last_redo_event_serial
+    if event.serial == _last_redo_event_serial:
+        return
+    _last_redo_event_serial = event.serial
+    if isinstance(event.widget, (Text, Entry, Spinbox)):
+        return
+    redo_click()
+
+# binding on the root window covers every widget in the main window; both
+# spellings match a real Ctrl+Shift+Z (Tk implies Shift for the capital keysym,
+# but only the explicit form matches synthetic events)
+root.bind("<Control-z>", undo_event_handler)
+root.bind("<Control-Z>", redo_event_handler)
+root.bind("<Control-Shift-Z>", redo_event_handler)
+root.bind("<Control-y>", redo_event_handler)
+root.bind("<Control-Y>", redo_event_handler)
 
 # --------------------
 
