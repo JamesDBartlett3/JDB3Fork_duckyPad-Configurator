@@ -2350,6 +2350,59 @@ current_selected_expansion_module = 0
 exp_page_update()
 root.update()
 
+# ------------- Key copy/paste (right-click) -------------
+copied_key = None
+key_copy_paste_menu_target = None
+key_copy_paste_menu = Menu(root, tearoff=0)
+
+def key_copy_click():
+    global copied_key
+    if key_copy_paste_menu_target is None or len(profile_lstbox.curselection()) <= 0:
+        return
+    profile_index = profile_lstbox.curselection()[0]
+    source_key = profile_list[profile_index].keylist[key_copy_paste_menu_target]
+    if source_key is None:
+        return
+    copied_key = copy.deepcopy(source_key)
+    copied_key.path = None
+    copied_key.path_on_release = None
+    copied_key.index = None
+    copied_key.binary_array = None
+    copied_key.binary_array_on_release = None
+
+def key_paste_click():
+    global copied_key
+    if copied_key is None or key_copy_paste_menu_target is None or len(profile_lstbox.curselection()) <= 0:
+        return
+    profile_index = profile_lstbox.curselection()[0]
+    new_key = copy.deepcopy(copied_key)
+    new_key.index = key_copy_paste_menu_target + 1
+    profile_list[profile_index].keylist[key_copy_paste_menu_target] = new_key
+    update_keylist_index()
+    update_key_button_appearances(profile_index)
+    key_button_click(key_button_list[key_copy_paste_menu_target])
+
+def show_key_copy_paste_menu(event):
+    global key_copy_paste_menu_target
+    if len(profile_lstbox.curselection()) <= 0:
+        return
+    key_copy_paste_menu_target = key_button_list.index(event.widget)
+    source_key = profile_list[profile_lstbox.curselection()[0]].keylist[key_copy_paste_menu_target]
+    key_copy_paste_menu.entryconfig("Copy Key", state="normal" if source_key is not None else "disabled")
+    key_copy_paste_menu.entryconfig("Paste Key", state="normal" if copied_key is not None else "disabled")
+    try:
+        key_copy_paste_menu.tk_popup(event.x_root, event.y_root)
+    finally:
+        key_copy_paste_menu.grab_release()
+
+key_copy_paste_menu.add_command(label="Copy Key", command=key_copy_click)
+key_copy_paste_menu.add_command(label="Paste Key", command=key_paste_click)
+
+for button in key_button_list:
+    button.bind("<Button-3>", show_key_copy_paste_menu)
+    button.bind("<Button-2>", show_key_copy_paste_menu) # macOS specific often
+    button.bind("<Control-Button-1>", show_key_copy_paste_menu)
+
 # --------------------
 
 def repeat_func():
