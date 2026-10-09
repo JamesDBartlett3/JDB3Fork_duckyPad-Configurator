@@ -3,3 +3,4 @@ src/test.txt
 src/out.dsb
 __pycache__/
 *.pyc
+.video_agent/
