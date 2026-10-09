@@ -31,7 +31,12 @@ if HIDE_DEBUG_CONSOLE:
         try:
             console_window = ctypes.windll.kernel32.GetConsoleWindow()
             if console_window:
-                ctypes.windll.user32.ShowWindow(console_window, 0)
+                # only hide the console if this process is the only one attached to it
+                # (launched via Explorer/shortcut), not when run from an existing terminal
+                process_ids = (ctypes.c_uint * 2)()
+                attached_count = ctypes.windll.kernel32.GetConsoleProcessList(process_ids, 2)
+                if attached_count <= 1:
+                    ctypes.windll.user32.ShowWindow(console_window, 0)
         except Exception:
             pass
 
@@ -295,12 +300,14 @@ def load_favorite_colors():
 
 def save_favorite_colors():
     try:
-        with open(favorite_colors_file_path, 'w', encoding='utf8', newline='') as favorite_color_file:
+        temp_path = favorite_colors_file_path + '.tmp'
+        with open(temp_path, 'w', encoding='utf8', newline='') as favorite_color_file:
             for color in favorite_colors:
                 if color is None:
                     favorite_color_file.write('\n')
                 else:
                     favorite_color_file.write(f"{color[0]} {color[1]} {color[2]}\n")
+        os.replace(temp_path, favorite_colors_file_path)
     except Exception as e:
         print("save_favorite_colors:", e)
 
@@ -797,7 +804,7 @@ def askcolor_with_favorites(initial_color, title):
             }
             if favorite_color is None:
                 button_kwargs['background'] = default_button_color
-                button_kwargs['foreground'] = text_color_both_light_and_dark_mode
+                button_kwargs['foreground'] = 'black'
             else:
                 button_kwargs['background'] = rgb_to_hex(favorite_color)
                 button_kwargs['foreground'] = adapt_color(favorite_color)
@@ -1986,7 +1993,7 @@ scripts_lf = LabelFrame(root, text="Scripts", width=scaled_size(310), height=sca
 
 script_instruction = Label(master=scripts_lf, text="duckyScript Instructions", fg=color_blue_both_light_and_dark_mode, cursor="hand2")
 root.update()
-script_instruction.place(x=scaled_size(85), y=0)
+script_instruction.place(x=0, y=0)
 script_instruction.bind("<Button-1>", script_instruction_click)
 
 last_textbox_edit = 0
@@ -2050,7 +2057,7 @@ def insert_timed_key_press_click():
     check_syntax(True)
 
 timed_key_press_button = Button(scripts_lf, text="Timed Key", command=insert_timed_key_press_click, state=DISABLED)
-timed_key_press_button.place(x=scaled_size(225), y=scaled_size(16), width=scaled_size(70), height=scaled_size(24))
+timed_key_press_button.place(x=scaled_size(225), y=0, width=scaled_size(70), height=scaled_size(20))
 
 def on_press_rb_click():
     profile_index = profile_lstbox.curselection()[0]
@@ -2075,9 +2082,9 @@ def on_release_rb_click():
     script_textbox.insert(1.0, profile_list[profile_index].keylist[selected_key].script_on_release.lstrip(" \t").rstrip('\r\n'))
 
 on_press_rb = Radiobutton(scripts_lf, text="On Press", variable=on_press_release_rb_var, value=0, command=on_press_rb_click)
-on_press_rb.place(x=scaled_size(50), y=scaled_size(20))
+on_press_rb.place(x=scaled_size(50), y=scaled_size(24))
 on_release_rb = Radiobutton(scripts_lf, text="On Release", variable=on_press_release_rb_var, value=1, command=on_release_rb_click)
-on_release_rb.place(x=scaled_size(150), y=scaled_size(20))
+on_release_rb.place(x=scaled_size(150), y=scaled_size(24))
 root.update()
 
 last_check_syntax_listing = []
