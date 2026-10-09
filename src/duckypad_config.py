@@ -2382,6 +2382,50 @@ def key_paste_click():
     update_key_button_appearances(profile_index)
     key_button_click(key_button_list[key_copy_paste_menu_target])
 
+def key_paste_code_click(script_part):
+    global copied_key
+    if copied_key is None or key_copy_paste_menu_target is None or len(profile_lstbox.curselection()) <= 0:
+        return
+    profile_index = profile_lstbox.curselection()[0]
+    target_key = profile_list[profile_index].keylist[key_copy_paste_menu_target]
+    if target_key is None:
+        target_key = duck_objs.dp_key()
+        target_key.name = "New"
+        target_key.name_line2 = "Key"
+        profile_list[profile_index].keylist[key_copy_paste_menu_target] = target_key
+        update_keylist_index()
+    if script_part != "release":
+        target_key.script = copied_key.script
+        target_key.binary_array = None
+    if script_part != "press":
+        target_key.script_on_release = copied_key.script_on_release
+        target_key.binary_array_on_release = None
+    if script_part == "all":
+        target_key.allow_abort = copied_key.allow_abort
+        target_key.dont_repeat = copied_key.dont_repeat
+    update_key_button_appearances(profile_index)
+    key_button_click(key_button_list[key_copy_paste_menu_target])
+
+def key_paste_style_click(style_part):
+    global copied_key
+    if copied_key is None or key_copy_paste_menu_target is None or len(profile_lstbox.curselection()) <= 0:
+        return
+    profile_index = profile_lstbox.curselection()[0]
+    target_key = profile_list[profile_index].keylist[key_copy_paste_menu_target]
+    if target_key is None:
+        target_key = duck_objs.dp_key()
+        target_key.name = "New"
+        target_key.name_line2 = "Key"
+        profile_list[profile_index].keylist[key_copy_paste_menu_target] = target_key
+        update_keylist_index()
+    if style_part != "color":
+        target_key.name = copied_key.name
+        target_key.name_line2 = copied_key.name_line2
+    if style_part != "text":
+        target_key.color = copied_key.color
+    update_key_button_appearances(profile_index)
+    key_button_click(key_button_list[key_copy_paste_menu_target])
+
 def show_key_copy_paste_menu(event):
     global key_copy_paste_menu_target
     if len(profile_lstbox.curselection()) <= 0:
@@ -2389,14 +2433,29 @@ def show_key_copy_paste_menu(event):
     key_copy_paste_menu_target = key_button_list.index(event.widget)
     source_key = profile_list[profile_lstbox.curselection()[0]].keylist[key_copy_paste_menu_target]
     key_copy_paste_menu.entryconfig("Copy Key", state="normal" if source_key is not None else "disabled")
-    key_copy_paste_menu.entryconfig("Paste Key", state="normal" if copied_key is not None else "disabled")
+    paste_state = "normal" if copied_key is not None else "disabled"
+    key_copy_paste_menu.entryconfig("Paste", state=paste_state)
+    key_copy_paste_menu.entryconfig("Paste Code Only", state=paste_state)
+    key_copy_paste_menu.entryconfig("Paste Style Only", state=paste_state)
     try:
         key_copy_paste_menu.tk_popup(event.x_root, event.y_root)
     finally:
         key_copy_paste_menu.grab_release()
 
+paste_code_menu = Menu(key_copy_paste_menu, tearoff=0)
+paste_code_menu.add_command(label="All", command=lambda: key_paste_code_click("all"))
+paste_code_menu.add_command(label="On Press Only", command=lambda: key_paste_code_click("press"))
+paste_code_menu.add_command(label="On Release Only", command=lambda: key_paste_code_click("release"))
+
+paste_style_menu = Menu(key_copy_paste_menu, tearoff=0)
+paste_style_menu.add_command(label="All", command=lambda: key_paste_style_click("all"))
+paste_style_menu.add_command(label="Text Only", command=lambda: key_paste_style_click("text"))
+paste_style_menu.add_command(label="Color Only", command=lambda: key_paste_style_click("color"))
+
 key_copy_paste_menu.add_command(label="Copy Key", command=key_copy_click)
-key_copy_paste_menu.add_command(label="Paste Key", command=key_paste_click)
+key_copy_paste_menu.add_command(label="Paste", command=key_paste_click)
+key_copy_paste_menu.add_cascade(label="Paste Code Only", menu=paste_code_menu)
+key_copy_paste_menu.add_cascade(label="Paste Style Only", menu=paste_style_menu)
 
 for button in key_button_list:
     button.bind("<Button-3>", show_key_copy_paste_menu)

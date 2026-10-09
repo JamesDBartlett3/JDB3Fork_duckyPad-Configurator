@@ -13,7 +13,7 @@ This is the software that configures [duckyPad Macropads](duckypad.com)!
 * Color picking now supports **favorite slots** that can be selected independently from the current working color.
 * The **Save to Slot** action stores the current color in the selected favorite slot without first switching the active color to that slot.
 * The Scripts panel now includes a **Timed Key** helper that inserts a `DEFAULTDELAY` + `KEYDOWN` + `KEYUP` press/release block for a selected key.
-* Keys can be **copied and pasted** with a right-click menu, either within a profile or into a different profile. Pasting onto an empty slot fills it; pasting onto an existing key replaces it.
+* Keys can be **copied and pasted** with a right-click menu, either within a profile or into a different profile. Paste comes in three flavors: the whole key, **code only** (both scripts plus the abort/repeat flags, on-press script only, or on-release script only), or **style only** (text and color, text only, or color only). All of them work on empty slots — whole-key paste fills the slot, while code/style-only create a placeholder "New Key" holding just what you pasted. On occupied slots, they merge into the existing key.
 * The app can be launched without the debug console by passing `--no-debug-console`.
 
 ### Windows Test Builds
